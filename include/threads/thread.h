@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -27,6 +28,9 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+#define FDT_PAGES 2
+#define FDT_COUNT_LIMIT 128
 
 /* A kernel thread or user process.
  *
@@ -102,6 +106,19 @@ struct thread {
 	struct list donations;			// 기부 받은 우선순위 리스트
 	struct list_elem donation_elem; // donations 식별자
 
+	struct file **fdt;    //project2를 file descriptor table을 위한 인자
+	int next_fd;          //project2를 file descriptor table을 위한 인자  
+	struct intr_frame parent_if;
+	struct list child_list;
+	struct list_elem child_elem;
+
+	struct semaphore load_sema;
+	struct semaphore exit_sema;
+	struct semaphore wait_sema;
+
+	struct file *running;
+	int exit_status;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -149,6 +166,8 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+int process_add_file (struct file *f);
 
 void do_iret (struct intr_frame *tf);
 

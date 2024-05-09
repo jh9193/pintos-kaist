@@ -199,6 +199,12 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
     t->tf.cs = SEL_KCSEG;
     t->tf.eflags = FLAG_IF;
 
+    list_push_back(&thread_current()->child_list, &t->child_elem);
+
+    t->fdt = palloc_get_multiple(PAL_ZERO, FDT_PAGES);
+    if (t->fdt ==NULL)
+        return TID_ERROR;
+
     /* Add to run queue. */
     thread_unblock(t);
     thread_test_preemption();
@@ -274,16 +280,19 @@ tid_t thread_tid(void) {
 
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
-void thread_exit(void) {
+void  thread_exit(void) {
     ASSERT(!intr_context());
 
 #ifdef USERPROG
+    printf("유저 프로그램 프로세스 엑시트\n");
     process_exit();
 #endif
 
     /* Just set our status to dying and schedule another process.
        We will be destroyed during the call to schedule_tail(). */
     intr_disable();
+    // list_remove (&thread_current()->allelem);
+
     do_schedule(THREAD_DYING);
     NOT_REACHED();
 }
@@ -304,6 +313,7 @@ void thread_yield(void) {
   schedule ();
   intr_set_level (old_level);
 }
+
 bool cmp_thread_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
     return list_entry (a, struct thread, elem)->priority
@@ -438,6 +448,12 @@ static void init_thread(struct thread *t, const char *name, int priority) {
     t->init_priority = priority; // save orginal priority
     t->wait_on_lock = NULL;
     list_init(&t->donations);
+    t->exit_status = 0;
+    t->next_fd = 2;
+    list_init(&t->child_list);
+    sema_init(&t->load_sema, 0);
+    sema_init(&t->wait_sema, 0);
+    sema_init(&t->exit_sema, 0);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
