@@ -97,7 +97,7 @@ tid_t process_fork(const char *name, struct intr_frame *if_ UNUSED) {
     sema_down(&child->fork_sema);
     if (child->exit_status == -1)
         return TID_ERROR;
-    return pid;
+    return pid;  //부모 프로세스는 자식의 pid를 리턴한다.
 }
 
 #ifndef VM
@@ -157,7 +157,7 @@ static void __do_fork(void *aux) {
 
     /* 1. Read the cpu context to local stack. */
     memcpy(&if_, parent_if, sizeof(struct intr_frame));
-    if_.R.rax = 0;
+    if_.R.rax = 0; // 자식 프로세스는 0을 리턴한다
  
     /* 2. Duplicate PT */
     current->pml4 = pml4_create();
@@ -190,7 +190,7 @@ static void __do_fork(void *aux) {
     }
     current->next_fd = parent->next_fd;
 
-    // 로드가 완료될 때까지 기다리고 있던 부모 대기 해제
+    // 로드가 완료되면 부모의 대기 해제
     sema_up(&current->fork_sema);
     process_init();
 
@@ -224,9 +224,7 @@ int process_exec(void *f_name) {
         parse[count++] = token;
 	}
     /* And then load the binary */
-    // lock_acquire(&filesys_lock);
     success = load(file_name, &_if);
-    // lock_release(&filesys_lock);
 
     /* If load failed, quit. */
     if (!success) {
@@ -237,7 +235,7 @@ int process_exec(void *f_name) {
     argument_stack(parse, count, &_if);
 	_if.R.rdi = count;
     _if.R.rsi = (char *)_if.rsp + 8;
-    // hex_dump(_if.rsp, _if.rsp, KERN_BASE - (uint64_t)_if.rsp, true);  // user stack을 16진수로 프린트
+    // hex_dump(_if.rsp, _if.rsp, KERN_BASE - (uint64_t)_if.rsp, true);  // 시스템 콜 구현 전에는 이걸로 확인
 
     palloc_free_page(file_name);
 
@@ -248,21 +246,18 @@ int process_exec(void *f_name) {
 void argument_stack(char **argv, int argc, struct intr_frame *if_){
 	char *arg_address[128];
 
-	// part A: word-align 전까지
 	for(int i = argc - 1 ; i >= 0; i--){
-		int arg_i_len = strlen(argv[i]) + 1; // include sentinel(\0)
-		if_->rsp = if_->rsp - (arg_i_len); // 인자 크기만큼 스택을 늘려줌
-		memcpy(if_->rsp, argv[i], arg_i_len); // 늘려준 공간에 해당 인자를 복사
-		arg_address[i] = if_->rsp; // arg_address 에 위 인자를 복사해준 주소값을 저장
+		int arg_i_len = strlen(argv[i]) + 1;   // 인자의 크기 + 1 (\n)
+		if_->rsp = if_->rsp - (arg_i_len);     // 크기만큼 스택포인터 이동
+		memcpy(if_->rsp, argv[i], arg_i_len);  // 해당 위치에 인자 복사
+		arg_address[i] = if_->rsp;             // arg_address 인자를 복사해준 주소값을 저장
 	}
 
-	// part B : word-align (8의 배수)
-	while(if_ -> rsp % 8 != 0){
+	while(if_ -> rsp % 8 != 0){                //8의 배수로 Padding
 		if_->rsp--;
 		*(uint8_t *) if_->rsp = 0;
 	}
 
-	// part C: word-align 이후 (깃북 argv[4]~argv[0]의 주소를 data로 넣기)
 	for(int i = argc; i>=0; i--){
 		if_->rsp = if_->rsp - 8;
 		if(i==argc)
@@ -271,14 +266,13 @@ void argument_stack(char **argv, int argc, struct intr_frame *if_){
 			memcpy(if_->rsp, &arg_address[i], sizeof(char **));
 	}
 
-	// part D: rdi, rsi 세팅
 
 	if_->R.rdi = argc;
-	if_->R.rsi = if_->rsp; // 굳이 -8 하고나서 +8 안하고, 그냥 여기서 세팅하기
+	if_->R.rsi = if_->rsp;                      // rsi, rdi 세팅
 
-	// part E: 마지막줄 (fake address)
+	
 	if_->rsp = if_->rsp - 8;
-	memset(if_->rsp, 0, sizeof(void *));
+	memset(if_->rsp, 0, sizeof(void *));        // fake address 지정
 }
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
@@ -292,13 +286,13 @@ void argument_stack(char **argv, int argc, struct intr_frame *if_){
 int process_wait(tid_t child_tid UNUSED) {
     struct thread *cur = thread_current();
     struct thread *child = get_child_process(child_tid);
-    if (child == NULL)
+    if (child == NULL)                           //자식이 없으면 -1 반환
         return -1;
-    sema_down(&child->wait_sema);
-    int exit_status = child->exit_status;
-    list_remove(&child->child_elem);
-    sema_up(&child->free_sema);
-    return exit_status;// 자식의 exit_status를 반환한다.
+    sema_down(&child->wait_sema);                //자식이 종료될 때까지 대기
+    int exit_status = child->exit_status;        
+    list_remove(&child->child_elem);             //부모의 자식리스트에서 자식 제거
+    sema_up(&child->free_sema);                  //자식이 완전히 종료되고 자식에게 signal을 보냄
+    return exit_status;                          //자식의 exit_status 반환
 }
 
 /* Exit the process. This function is called by thread_exit (). */
@@ -308,15 +302,16 @@ void process_exit(void) {
      * TODO: Implement process termination message (see
      * TODO: project2/process_termination.html).
      * TODO: We recommend you to implement process resource cleanup here. */
-    // FDT의 모든 파일을 닫고 메모리를 반환한다.
-    for (int i = 0; i < FDT_COUNT_LIMIT; i++) { // !!! close 문제로 인해 -> open-twice 실행 시 close()가 먹혀서 에러가 발생함 !!!
+
+    
+    for (int i = 0; i < FDT_COUNT_LIMIT; i++) {   // FDT의 모든 파일을 닫고 메모리를 반환.
         if (curr->fdt[i] != NULL)
             close(i);
 
     }
 
     struct list_elem *child;
-    for (child = list_begin(&thread_current()->child_list); // childs 순회
+    for (child = list_begin(&thread_current()->child_list);                             // child_list 순회하면서 세마 업
          child != list_end(&thread_current()->child_list); child = list_next(child))
     {
         struct thread *t = list_entry(child, struct thread, child_elem);
@@ -324,15 +319,13 @@ void process_exit(void) {
     }
 
     palloc_free_multiple(curr->fdt, FDT_PAGES);
-    file_close(curr->running);  // 현재 실행 중인 파일도 닫는다.
+    file_close(curr->running);                  // 현재 실행 중인 파일 Close.
 
     process_cleanup();
    
-    // 자식이 종료될 때까지 대기하고 있는 부모에게 signal을 보낸다.
-    sema_up(&curr->wait_sema);
-    // 부모의 signal을 기다린다. 대기가 풀리고 나서 do_schedule(THREAD_DYING)이 이어져 다른 스레드가 실행된다.
-    sema_down(&curr->free_sema);
+    sema_up(&curr->wait_sema);                  // 자식이 종료될 때 부모에게 signal을 보냄
     
+    sema_down(&curr->free_sema);                // 부모의 signal을 대기. 
 }
 
 /* Free the current process's resources. */
@@ -732,7 +725,7 @@ static bool setup_stack(struct intr_frame *if_) {
 #endif /* VM */
 
 struct thread *get_child(int pid) {
-    struct thread *curr = thread_current();            // 부모 쓰레드
+    struct thread *curr = thread_current();            // 현재 스레드(부모 스레드)
     struct list *curr_child_list = &curr->child_list;  // 부모의 자식 리스트
     struct list_elem *e;
     for (e = list_begin(curr_child_list); e != list_end(curr_child_list); e = list_next(e)) {
@@ -742,14 +735,13 @@ struct thread *get_child(int pid) {
     }
     return NULL;
 }
-// 파일 객체에 대한 파일 디스크립터를 생성하는 함수
+
 int process_add_file(struct file *f)
 {
 	struct thread *curr = thread_current();
 	struct file **fdt = curr->fdt;
 
-	// limit을 넘지 않는 범위 안에서 빈 자리 탐색
-	while (curr->next_fd < FDT_COUNT_LIMIT && fdt[curr->next_fd])
+	while (curr->next_fd < FDT_COUNT_LIMIT && fdt[curr->next_fd])  //빈 자리 탐색
 		curr->next_fd++;
 	if (curr->next_fd >= FDT_COUNT_LIMIT){
         curr->next_fd = FDT_COUNT_LIMIT;
@@ -759,7 +751,7 @@ int process_add_file(struct file *f)
 
 	return curr->next_fd;
 }
-// 파일 디스크립터 테이블에서 파일 객체를 제거하는 함수
+
 void process_close_file(int fd)
 {
 	struct thread *curr = thread_current();
@@ -771,16 +763,15 @@ void process_close_file(int fd)
 
 struct thread *get_child_process(int pid)
 {
-	/* 자식 리스트에 접근하여 프로세스 디스크립터 검색 */
 	struct thread *cur = thread_current();
 	struct list *child_list = &cur->child_list;
 	for (struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e))
 	{
 		struct thread *t = list_entry(e, struct thread, child_elem);
-		/* 해당 pid가 존재하면 프로세스 디스크립터 반환 */
+		
 		if (t->tid == pid)
 			return t;
 	}
-	/* 리스트에 존재하지 않으면 NULL 리턴 */
+	
 	return NULL;
 }

@@ -70,16 +70,15 @@ void syscall_init(void) {
 }
 
 void check_address(void *addr) {
-	struct thread *t = thread_current(); // 변경사항
-	/* 포인터가 가리키는 주소가 유저영역의 주소인지 확인 */
+	struct thread *t = thread_current(); 
 	/* what if the user provides an invalid pointer, a pointer to kernel memory, 
 	 * or a block partially in one of those regions */
-	/* 잘못된 접근인 경우, 프로세스 종료 */
-	if (!is_user_vaddr(addr) || addr == NULL || pml4_get_page(t->pml4, addr) == NULL)
+	
+	if (!is_user_vaddr(addr) || addr == NULL || pml4_get_page(t->pml4, addr) == NULL)  //잘못된 접근인 경우, 프로세스 종료
 		exit(-1);
 }
 void halt(void) {
-    power_off();  // pintos 완전히 종료
+    power_off();  	// pintos 종료
 }
 void exit(int status) {
     struct thread *curr = thread_current();
@@ -87,8 +86,8 @@ void exit(int status) {
     printf("%s: exit(%d)\n", curr->name, status);  // process termination message
     thread_exit();
 }
-bool create(const char *file, unsigned initial_size) {  // 파일 시스템 생성 시스템 콜
-    check_address(file);                                // 유효한 주소인 경우
+bool create(const char *file, unsigned initial_size) { 
+    check_address(file);                                
     return filesys_create(file, initial_size);
 }
 
@@ -100,7 +99,7 @@ bool remove(const char *file) {
 int open(const char *file) {
     check_address(file);
 
-    struct file *f = filesys_open(file);  // 파일을 오픈
+    struct file *f = filesys_open(file);
     if (f == NULL)
         return -1;
     int fd = process_add_file(f);
@@ -112,8 +111,7 @@ int open(const char *file) {
 struct file *process_get_file (int fd){
 	struct thread *curr = thread_current();
 	struct file **fdt = curr->fdt;
-	/* 파일 디스크립터에 해당하는 파일 객체를 리턴 */
-	/* 없을 시 NULL 리턴 */
+	
 	if (fd < 2 || fd >= FDT_COUNT_LIMIT)
 		return NULL;
 	
@@ -121,7 +119,7 @@ struct file *process_get_file (int fd){
 }
 
 int filesize(int fd) {
-    struct file *f = process_get_file(fd);  // fd를 이용해서 파일 객체 검색
+    struct file *f = process_get_file(fd); 
     if (f == NULL)
         return -1;
     return file_length(f);
@@ -134,12 +132,11 @@ int exec(const char *cmd_line)
 	char *cmd_line_copy;
 	cmd_line_copy = palloc_get_page(0);
 	if (cmd_line_copy == NULL)
-		exit(-1);							  // 메모리 할당 실패 시 status -1로 종료한다.
-	strlcpy(cmd_line_copy, cmd_line, PGSIZE); // cmd_line을 복사한다.
-
-	// 스레드의 이름을 변경하지 않고 바로 실행한다.
-	if (process_exec(cmd_line_copy) == -1)
-		exit(-1); // 실패 시 status -1로 종료한다.
+		exit(-1);							    // 메모리 할당 실패 시 -1로 종료
+	strlcpy(cmd_line_copy, cmd_line, PGSIZE);   // cmd_line 복사
+	
+	if (process_exec(cmd_line_copy) == -1)      
+		exit(-1); 								// 실패 시 -1로 종료
 }
 
 int read(int fd, void *buffer, unsigned size) // read 함수는 fd, size로 얼만큼 읽었는지 뱉어내는 함수
@@ -149,13 +146,12 @@ int read(int fd, void *buffer, unsigned size) // read 함수는 fd, size로 얼�
 	char *ptr = (char *)buffer;
 	int bytes_read = 0;
 
-	lock_acquire(&filesys_lock);
+	lock_acquire(&filesys_lock);					//Sync를 맞추기 위해 lock 요청
 
 	if (fd == STDIN_FILENO)
 	{
-		for (int i = 0; i < size; i++)
+		for (int i = 0; i < size; i++)  			//표준 입력일 때 사용자가 입력한 데이터를 사용할 수 있도록 SIZE 만큼 처리
 		{
-			/* 표준 입력(FD = 0)일 때 사용자가 입력한 데이터를 사용할 수 있도록 SIZE 만큼 처리 */
 			*ptr++ = input_getc();
 			bytes_read++;
 		}
@@ -178,7 +174,7 @@ int read(int fd, void *buffer, unsigned size) // read 함수는 fd, size로 얼�
 			return -1;
 		}
 		bytes_read = file_read(file, buffer, size);
-		lock_release(&filesys_lock);
+		lock_release(&filesys_lock);  				 //작업이 끝나면 lock 반환
 	}
 	return bytes_read;
 }
@@ -211,7 +207,7 @@ void seek(int fd, unsigned position)
 	struct file *file = process_get_file(fd);
 	if (file == NULL)
 		return;
-	file_seek(file, position); // position에서 부터 file을 읽거나 쓰기 시작하도록 위치 지정
+	file_seek(file, position); 					// position에서 부터 file을 읽거나 쓰기 시작하도록 위치 지정
 }
 
 unsigned tell(int fd)
@@ -245,7 +241,7 @@ tid_t fork (const char *thread_name){
 /* The main system call interface */
 void syscall_handler(struct intr_frame *f UNUSED) {
     // TODO: Your implementation goes here.
-    int syscall_number = f->R.rax;  // system call number 가져오기
+    int syscall_number = f->R.rax;  		// system call number 가져오기
    switch (syscall_number)
 	{
 	case SYS_HALT:
