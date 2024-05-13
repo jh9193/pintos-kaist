@@ -59,7 +59,7 @@ tid_t process_create_initd(const char *file_name) {
 
     char *save_ptr;
     strtok_r(file_name, " ", &save_ptr);
-    // printf("파싱 다했음: %s\n", file_name);
+
     /* Create a new thread to execute FILE_NAME. */
 	tid = thread_create(file_name, PRI_DEFAULT, initd, fn_copy);
     
@@ -67,7 +67,7 @@ tid_t process_create_initd(const char *file_name) {
         printf("TID ERROR IN\n");
         palloc_free_page(fn_copy);
     }
-    // printf("process_created_initd 완료\n");
+
 	return tid;
 }
 
@@ -216,7 +216,7 @@ int process_exec(void *f_name) {
 
     /* We first kill the current context */
     process_cleanup();
-	// printf("여기야 여기\n");
+
     char *parse[64];
     char *token, *save_ptr;
     int count = 0;
@@ -227,10 +227,6 @@ int process_exec(void *f_name) {
     // lock_acquire(&filesys_lock);
     success = load(file_name, &_if);
     // lock_release(&filesys_lock);
-    // 이진 파일을 디스크에서 메모리로 로드한다.
-    // 이진 파일에서 실행하려는 명령의 위치를 얻고 (if_.rip)
-    // user stack의 top 포인터를 얻는다. (if_.rsp)
-    // 위 과정을 성공하면 실행을 계속하고, 실패하면 스레드가 종료된다.
 
     /* If load failed, quit. */
     if (!success) {
@@ -238,8 +234,6 @@ int process_exec(void *f_name) {
         return -1;
     }
 
-
-    // argument_stack(parse, count, &_if.rsp);  // 함수 내부에서 parse와 rsp의 값을 직접 변경하기 위해 주소 전달
     argument_stack(parse, count, &_if);
 	_if.R.rdi = count;
     _if.R.rsi = (char *)_if.rsp + 8;
@@ -333,8 +327,7 @@ void process_exit(void) {
     file_close(curr->running);  // 현재 실행 중인 파일도 닫는다.
 
     process_cleanup();
-    // hash_destroy(&curr->spt.spt_hash, NULL);  // todo 🚨
-
+   
     // 자식이 종료될 때까지 대기하고 있는 부모에게 signal을 보낸다.
     sema_up(&curr->wait_sema);
     // 부모의 signal을 기다린다. 대기가 풀리고 나서 do_schedule(THREAD_DYING)이 이어져 다른 스레드가 실행된다.
@@ -534,7 +527,6 @@ static bool load(const char *file_name, struct intr_frame *if_) {
 
 done:
     /* We arrive here whether the load is successful or not. */
-    // file_close(file);
     return success;
 }
 
@@ -766,15 +758,6 @@ int process_add_file(struct file *f)
 	fdt[curr->next_fd] = f;
 
 	return curr->next_fd;
-    // for (int idx = curr->fd_idx; idx<FDT_COUNT_LIMIT; idx++){
-    //     if(fdt[idx] == NULL){
-    //         fdt[idx] = f;
-    //         curr->fd_idx = idx;
-    //         return curr->fd_idx;
-    //     }
-    // }
-    // curr->fd_idx = FDT_COUNT_LIMIT;
-    // return -1;
 }
 // 파일 디스크립터 테이블에서 파일 객체를 제거하는 함수
 void process_close_file(int fd)
@@ -784,9 +767,6 @@ void process_close_file(int fd)
 	if (fd < 2 || fd >= FDT_COUNT_LIMIT)
 		return NULL;
 	fdt[fd] = NULL;   
-//     if (fd < 0 || fd > FDT_COUNT_LIMIT)
-// 		return NULL;
-// 	thread_current()->fd_table[fd] = NULL;
 }
 
 struct thread *get_child_process(int pid)

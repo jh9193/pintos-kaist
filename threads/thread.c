@@ -272,7 +272,6 @@ const char *thread_name(void)
 struct thread *thread_current(void)
 {
     struct thread *t = running_thread();
-    // printf("%s\n", t->status);
     /* Make sure T is really a thread.
        If either of these assertions fire, then your thread may
        have overflowed its stack.  Each thread has less than 4 kB
@@ -318,7 +317,6 @@ void thread_yield(void)
 
     old_level = intr_disable();
     if (cur != idle_thread)
-        // list_push_back (&ready_list, &cur->elem);
         list_insert_ordered(&ready_list, &cur->elem, cmp_thread_priority, 0);
     cur->status = THREAD_READY;
     schedule();
